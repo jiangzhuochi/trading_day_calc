@@ -21,44 +21,72 @@ pip uninstall trading-day-calc --yes
 
 ## 功能
 
+### 导入
+
 ```python
 import datetime
 
 from trading_day_calc import (TRADE_DATE, filter_between, filter_d, filter_mon,
+                              get_1d_after_holiday, get_1d_before_holiday,
                               get_first_day_per_month, get_last_day_per_month)
+```
+### 1990-12-19 到 2021-12-31 之间的股票交易日历数据库
 
-'1990-12-19 到 2021-12-31 之间的股票交易日历数据库'
-# print(TRADE_DATE)
+```python
+print(TRADE_DATE)
+```
 
+### 对日期列表进行过滤，在 2021 年 7 月的交易日
+
+```python
 july1 = datetime.date(2021, 7, 1)
 july31 = datetime.date(2021, 7, 31)
-'对日期列表进行过滤，在 2021 年 7 月的交易日'
 td_on_july = filter_d(
     lambda d:
     july1 <= d <= july31,
     TRADE_DATE
 )
-# print(td_on_july)
+print(td_on_july)
 td_on_july2 = filter_between(start=july1,
                              end=july31)
 assert td_on_july == td_on_july2
+```
 
-'提取出在周一的交易日'
+### 提取出在周一的交易日
+
+```
 td_on_monday = filter_mon(TRADE_DATE)
-# print(td_on_monday)
+print(td_on_monday)
+```
+### 提取每月的第一个交易日、最后一个交易日
 
-'指定时间段的开始日和结束日，提取每月的第一个交易日、最后一个交易日'
+```python
+# 指定时间段的开始日和结束日
 julyfirst = get_first_day_per_month(start=july1, end=july31)
 julylast = get_last_day_per_month(start=july1, end=july31)
 print(julyfirst, julylast, '\n')
 
-'也可以输入时间列表'
+# 也可以输入时间列表
 year2021 = TRADE_DATE[TRADE_DATE.index(datetime.date(2021, 1, 4)):]
 year2021first = get_first_day_per_month(year2021)
 print(year2021first)
+```
 
+### 假期的前一个交易日和后一个交易日
 
-'''所有导出的变量
+```python
+# 指定时间段的开始日和结束日
+print(get_1d_after_holiday(start=july1, end=july31))
+print(get_1d_before_holiday(start=july1, end=july31))
+
+# 也可以输入时间列表
+year2021 = TRADE_DATE[TRADE_DATE.index(datetime.date(2021, 1, 4)):]
+print(get_1d_after_holiday(year2021))
+```
+
+### 所有导出的变量
+
+```python
 __all__ = [
     'TRADE_DATE',
     'filter_d',
@@ -69,17 +97,14 @@ __all__ = [
     'filter_fri',
     'filter_between',
     'get_first_day_per_month',
-    'get_last_day_per_month'
+    'get_last_day_per_month',
+    'get_1d_after_holiday',
+    'get_1d_before_holiday',
 ]'''
-
 ```
 
 ## 待办
 
-- 给定开始和结束日，返回之间的所有交易日，前闭后闭
-- 给定开始和结束日，返回之间的所有在假日前一天、二天的交易日，前闭后闭。
-- 给定开始和结束日，返回之间的所有在假日后一天、二天、三天的交易日，前闭后闭。例如假日是 1，2，3，6，7，13，14，20，21。开始日 2，结束日 20，则假日后一天的交易日返回 4，8，15；假日后二天的交易日返回5，9，16；假日后三天的交易日只返回 10，17。
-- ...
 
 ## 原则
 
