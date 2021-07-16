@@ -129,8 +129,19 @@ def _get_nd_before_or_after_holiday(*, ds: Optional[List[DateType]],
     else:
         after_e = []
 
-    ungrouped_before_s = before_s + ungrouped
-    ungrouped_after_e = ungrouped + after_e
+    if before_s and after_e:
+        ungrouped_before_s = before_s + ungrouped
+        ungrouped_after_e = ungrouped + after_e
+    elif before_s:
+        ungrouped_before_s = before_s + ungrouped[:-1]
+        ungrouped_after_e = ungrouped
+    elif after_e:
+        ungrouped_before_s = ungrouped
+        ungrouped_after_e = ungrouped[1:] + after_e
+    else:
+        ungrouped_before_s = ungrouped[:-1]
+        ungrouped_after_e = ungrouped[1:]
+
     diff = list(map(
         lambda d1, d2: (d2-d1).days,
         ungrouped_before_s,

@@ -12,7 +12,7 @@ td = trading_day_calc.TRADE_DATE
 
 
 def test_version():
-    assert trading_day_calc.__version__ == '0.1.4'
+    assert trading_day_calc.__version__ == '0.1.5'
 
 
 def test_trade_date():
@@ -87,3 +87,5 @@ def test_get_1d_before_or_after_holiday():
             dt(2021, 10, 15),
             dt(2021, 10, 22),
             dt(2021, 10, 29)] == get_1d_before_holiday(year2021_october)
+
+    assert get_1d_before_holiday()
