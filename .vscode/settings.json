@@ -2,6 +2,7 @@
     "files.exclude": {
         ".venv": true,
         ".pytest_cache": true,
+        ".benchmarks": true,
         "**/__pycache__": true,
         "dist": true
     },

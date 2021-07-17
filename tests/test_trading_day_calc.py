@@ -12,7 +12,7 @@ td = trading_day_calc.TRADE_DATE
 
 
 def test_version():
-    assert trading_day_calc.__version__ == '0.1.5'
+    assert trading_day_calc.__version__ == '0.2.0'
 
 
 def test_trade_date():
@@ -41,7 +41,7 @@ def test_filter_between():
     assert td[100:-19] == filter_between(start=daytop100, end=daybottom20)
 
 
-def test_filter_first_last_day_per_month():
+def test_get_first_last_day_per_month():
     year2021 = filter_between(
         start=dt(2021, 4, 1),
         end=dt(2021, 7, 31)
