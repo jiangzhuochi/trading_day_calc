@@ -8,7 +8,7 @@ from trading_day_calc import CalendarCoverageError, TradingCalendar
 
 @pytest.fixture(scope="module")
 def calendar() -> TradingCalendar:
-    return TradingCalendar()
+    return TradingCalendar(auto_refresh=False)
 
 
 def test_version_and_metadata(calendar: TradingCalendar) -> None:
@@ -131,3 +131,7 @@ def test_coverage_errors_are_explicit(calendar: TradingCalendar) -> None:
         calendar.next_trading_day(date(2026, 12, 31))
     with pytest.raises(CalendarCoverageError):
         calendar.previous_trading_day(date(1990, 12, 19))
+    with pytest.raises(ValueError):
+        calendar.refresh(through_year=True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        calendar.refresh(through_year=10_000)

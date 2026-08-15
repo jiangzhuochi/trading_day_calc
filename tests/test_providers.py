@@ -1,11 +1,16 @@
+from __future__ import annotations
+
 from pathlib import Path
+from types import TracebackType
 
 import pytest
 
+import trading_day_calc._providers as providers
 from trading_day_calc._providers import (
     FetchResponse,
     discover_notice_url,
     fetch_annual_schedule,
+    fetch_official_page,
     parse_annual_notice,
 )
 from trading_day_calc.errors import CalendarCoverageError, CalendarDataError
@@ -17,8 +22,55 @@ SSE_URL = (
 SZSE_URL = "https://www.szse.cn/disclosure/notice/general/t20251222_618087.html"
 
 
+class _FakeHeaders:
+    def get_content_charset(self) -> str:
+        return "utf-8"
+
+
+class _FakeResponse:
+    def __init__(self, url: str, body: bytes) -> None:
+        self._url = url
+        self._body = body
+        self.headers = _FakeHeaders()
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exception_type, exception, traceback
+
+    def geturl(self) -> str:
+        return self._url
+
+    def read(self, size: int) -> bytes:
+        assert size > len(self._body)
+        return self._body
+
+
 def _fixture(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def test_official_fetcher_limits_and_decodes_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = "官方页面".encode()
+
+    def fake_urlopen(request: object, timeout: float) -> _FakeResponse:
+        assert request is not None
+        assert timeout == 2.0
+        return _FakeResponse(SSE_URL, body)
+
+    monkeypatch.setattr(providers, "urlopen", fake_urlopen)
+
+    response = fetch_official_page("SSE", SSE_URL, 2.0)
+
+    assert response == FetchResponse(url=SSE_URL, text="官方页面")
 
 
 def test_annual_notices_parse_to_the_same_schedule() -> None:

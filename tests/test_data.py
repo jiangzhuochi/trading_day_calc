@@ -3,11 +3,17 @@ import json
 from collections.abc import Callable
 from datetime import date
 from importlib import resources
+from pathlib import Path
 from typing import cast
 
 import pytest
 
-from trading_day_calc._data import load_bundled_data, parse_calendar_data
+from trading_day_calc._data import (
+    calendar_data_to_json,
+    load_bundled_data,
+    load_calendar_file,
+    parse_calendar_data,
+)
 from trading_day_calc.errors import CalendarDataError
 
 LEGACY_SESSION_COUNT = 7_586
@@ -55,6 +61,43 @@ def _missing_sources(payload: dict[str, object]) -> None:
     payload["sources"] = []
 
 
+def _invalid_sessions_type(payload: dict[str, object]) -> None:
+    payload["sessions"] = "not-a-list"
+
+
+def _empty_market(payload: dict[str, object]) -> None:
+    payload["market"] = ""
+
+
+def _boolean_count(payload: dict[str, object]) -> None:
+    payload["session_count"] = True
+
+
+def _invalid_date(payload: dict[str, object]) -> None:
+    payload["generated_at"] = "2026-13-01"
+
+
+def _reversed_coverage(payload: dict[str, object]) -> None:
+    payload["coverage_start"] = "2027-01-01"
+    payload["coverage_end"] = "2026-12-31"
+
+
+def _empty_sessions(payload: dict[str, object]) -> None:
+    payload["sessions"] = []
+    payload["session_count"] = 0
+
+
+def _invalid_source_url(payload: dict[str, object]) -> None:
+    sources = cast(list[object], payload["sources"])
+    first = cast(dict[str, object], sources[0])
+    first["sse"] = "http://www.sse.com.cn/notice"
+
+
+def _unordered_sources(payload: dict[str, object]) -> None:
+    sources = cast(list[object], payload["sources"])
+    payload["sources"] = [sources[1], sources[0], *sources[2:]]
+
+
 INVALID_MUTATIONS: tuple[Callable[[dict[str, object]], None], ...] = (
     _invalid_schema,
     _invalid_market,
@@ -63,6 +106,14 @@ INVALID_MUTATIONS: tuple[Callable[[dict[str, object]], None], ...] = (
     _duplicate_sessions,
     _weekend_session,
     _missing_sources,
+    _invalid_sessions_type,
+    _empty_market,
+    _boolean_count,
+    _invalid_date,
+    _reversed_coverage,
+    _empty_sessions,
+    _invalid_source_url,
+    _unordered_sources,
 )
 
 
@@ -101,3 +152,11 @@ def test_invalid_calendar_data_is_rejected(
 
     with pytest.raises(CalendarDataError):
         parse_calendar_data(json.dumps(payload))
+
+
+def test_calendar_json_round_trip_and_missing_file_error(tmp_path: Path) -> None:
+    bundled = load_bundled_data()
+
+    assert parse_calendar_data(calendar_data_to_json(bundled)) == bundled
+    with pytest.raises(CalendarDataError):
+        load_calendar_file(tmp_path / "missing.json")

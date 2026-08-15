@@ -42,3 +42,23 @@ def test_bench_month_starts(
         date(2026, 12, 31),
     )
     assert len(result) == 433
+
+
+@pytest.mark.benchmark(group="constant-query")
+def test_bench_is_trading_day(
+    benchmark: BenchmarkFixture, calendar: TradingCalendar
+) -> None:
+    result = benchmark(calendar.is_trading_day, date(2026, 8, 14))
+    assert result is True
+
+
+@pytest.mark.benchmark(group="core-query")
+def test_bench_closed_periods(
+    benchmark: BenchmarkFixture, calendar: TradingCalendar
+) -> None:
+    result = benchmark(
+        calendar.closed_periods,
+        date(1990, 12, 19),
+        date(2026, 12, 31),
+    )
+    assert len(result) > 100

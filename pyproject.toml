@@ -54,9 +54,17 @@ venvPath = "."
 venv = ".venv"
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
 markers = [
     "benchmark: performance benchmark",
     "network: test that accesses the live exchange websites",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["trading_day_calc"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true

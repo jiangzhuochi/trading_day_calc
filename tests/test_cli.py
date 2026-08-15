@@ -54,3 +54,22 @@ def test_refresh_with_covered_year_does_not_require_network(
     assert exit_code == 0
     assert "覆盖范围：1990-12-19 至 2026-12-31" in captured.out
     assert captured.err == ""
+
+
+def test_cli_reports_calendar_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code = main(
+        [
+            "refresh",
+            "--cache",
+            str(tmp_path / "calendar.json"),
+            "--through-year",
+            "2021",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "交易日历操作失败" in captured.err

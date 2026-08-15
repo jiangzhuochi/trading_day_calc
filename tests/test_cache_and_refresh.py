@@ -11,8 +11,15 @@ from trading_day_calc import (
     CalendarUpdateError,
     TradingCalendar,
 )
-from trading_day_calc._cache import load_best_available, write_cache_atomically
-from trading_day_calc._data import load_bundled_data
+from trading_day_calc._cache import (
+    load_best_available,
+    write_cache_atomically,
+)
+from trading_day_calc._data import (
+    CalendarData,
+    calendar_data_to_json,
+    load_bundled_data,
+)
 from trading_day_calc._providers import Exchange, FetchResponse
 
 SSE_LISTING = "https://www.sse.com.cn/disclosure/dealinstruc/closed/list/"
@@ -136,6 +143,60 @@ def test_corrupt_cache_is_ignored_with_warning(
 
     assert data.coverage_end.isoformat() == "2026-12-31"
     assert "忽略损坏" in caplog.text
+
+
+def test_incompatible_cache_versions_are_rejected(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    bundled = load_bundled_data()
+    shifted_start = CalendarData(
+        coverage_start=bundled.sessions[1],
+        coverage_end=bundled.coverage_end,
+        generated_at=bundled.generated_at,
+        sessions=bundled.sessions[1:],
+        sources=bundled.sources,
+    )
+    older_sessions = tuple(
+        session for session in bundled.sessions if session.year <= 2025
+    )
+    older = CalendarData(
+        coverage_start=bundled.coverage_start,
+        coverage_end=date(2025, 12, 31),
+        generated_at=bundled.generated_at,
+        sessions=older_sessions,
+        sources=tuple(source for source in bundled.sources if source.year <= 2025),
+    )
+
+    for index, candidate in enumerate((shifted_start, older)):
+        cache_path = tmp_path / f"incompatible-{index}.json"
+        cache_path.write_text(calendar_data_to_json(candidate), encoding="utf-8")
+        with caplog.at_level(logging.WARNING):
+            loaded = load_best_available(cache_path)
+        assert loaded == bundled
+
+
+def test_valid_but_historically_changed_cache_is_ignored(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    cache_path = tmp_path / "calendar.json"
+    bundled = load_bundled_data()
+    changed_sessions = tuple(
+        session for session in bundled.sessions if session != date(2021, 7, 1)
+    )
+    changed = CalendarData(
+        coverage_start=bundled.coverage_start,
+        coverage_end=bundled.coverage_end,
+        generated_at=bundled.generated_at,
+        sessions=changed_sessions,
+        sources=bundled.sources,
+    )
+    cache_path.write_text(calendar_data_to_json(changed), encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        loaded = load_best_available(cache_path)
+
+    assert date(2021, 7, 1) in loaded.sessions
+    assert "历史不一致" in caplog.text
 
 
 def test_atomic_write_failure_preserves_existing_cache(
