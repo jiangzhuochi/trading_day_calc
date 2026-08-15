@@ -190,3 +190,21 @@ def test_listing_pagination_rejects_abnormal_page_count() -> None:
 
     with pytest.raises(CalendarDataError, match="页数异常"):
         fetch_annual_schedule("SZSE", 2026, fetcher=fake_fetcher)
+
+
+def test_fetch_schedule_rejects_missing_or_conflicting_pagination() -> None:
+    listing = "<html>尚无年度公告</html>"
+
+    def fake_fetcher(exchange: str, url: str, timeout: float) -> FetchResponse:
+        del exchange, timeout
+        return FetchResponse(url=url, text=listing)
+
+    with pytest.raises(CalendarCoverageError, match="尚未公布"):
+        fetch_annual_schedule("SZSE", 2026, fetcher=fake_fetcher)
+
+    listing = (
+        '<script>createPageHTML(2, 0, "index", "html");</script>'
+        '<script>createPageHTML(3, 0, "index", "html");</script>'
+    )
+    with pytest.raises(CalendarDataError, match="冲突"):
+        fetch_annual_schedule("SZSE", 2026, fetcher=fake_fetcher)
