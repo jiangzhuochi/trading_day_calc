@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from typing import Literal
 
 from ._data import CalendarData, load_bundled_data
 from .errors import CalendarCoverageError
+
+ClosedPeriodKind = Literal["weekend", "exchange_holiday", "mixed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,12 +25,29 @@ class CalendarMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class ClosedPeriod:
+    """一段连续休市区间及其前后交易日。"""
+
+    start: date
+    end: date
+    previous_trading_day: date
+    next_trading_day: date
+    kind: ClosedPeriodKind
+
+
+@dataclass(frozen=True, slots=True)
 class _CalendarState:
     data: CalendarData
     sessions: tuple[date, ...]
     session_set: frozenset[date]
     month_starts: tuple[date, ...]
     month_ends: tuple[date, ...]
+    closed_periods: tuple[ClosedPeriod, ...]
+    holiday_periods: tuple[ClosedPeriod, ...]
+    closed_starts: tuple[date, ...]
+    closed_ends: tuple[date, ...]
+    holiday_starts: tuple[date, ...]
+    holiday_ends: tuple[date, ...]
 
 
 def _validate_date(value: object, *, field: str) -> date:
@@ -42,6 +62,12 @@ def _validate_range(start: date, end: date) -> tuple[date, date]:
     if normalized_start > normalized_end:
         raise ValueError("start 不能晚于 end")
     return normalized_start, normalized_end
+
+
+def _validate_bool(value: object, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{field} 必须是 bool")
+    return value
 
 
 def _month_boundaries(
@@ -62,14 +88,60 @@ def _month_boundaries(
     return tuple(starts), tuple(ends)
 
 
+def _build_closed_periods(sessions: tuple[date, ...]) -> tuple[ClosedPeriod, ...]:
+    periods: list[ClosedPeriod] = []
+    one_day = timedelta(days=1)
+    for previous_session, next_session in zip(sessions, sessions[1:], strict=False):
+        if next_session - previous_session == one_day:
+            continue
+        start = previous_session + one_day
+        end = next_session - one_day
+        has_weekday = False
+        has_weekend = False
+        current = start
+        while current <= end:
+            if current.weekday() < 5:
+                has_weekday = True
+            else:
+                has_weekend = True
+            current += one_day
+        kind: ClosedPeriodKind
+        if has_weekday and has_weekend:
+            kind = "mixed"
+        elif has_weekday:
+            kind = "exchange_holiday"
+        else:
+            kind = "weekend"
+        periods.append(
+            ClosedPeriod(
+                start=start,
+                end=end,
+                previous_trading_day=previous_session,
+                next_trading_day=next_session,
+                kind=kind,
+            )
+        )
+    return tuple(periods)
+
+
 def _build_state(data: CalendarData) -> _CalendarState:
     month_starts, month_ends = _month_boundaries(data.sessions)
+    closed_periods = _build_closed_periods(data.sessions)
+    holiday_periods = tuple(
+        period for period in closed_periods if period.kind != "weekend"
+    )
     return _CalendarState(
         data=data,
         sessions=data.sessions,
         session_set=frozenset(data.sessions),
         month_starts=month_starts,
         month_ends=month_ends,
+        closed_periods=closed_periods,
+        holiday_periods=holiday_periods,
+        closed_starts=tuple(period.start for period in closed_periods),
+        closed_ends=tuple(period.end for period in closed_periods),
+        holiday_starts=tuple(period.start for period in holiday_periods),
+        holiday_ends=tuple(period.end for period in holiday_periods),
     )
 
 
@@ -172,6 +244,34 @@ class TradingCalendar:
         """返回区间内真正的月度最后一个交易日。"""
 
         return self._boundaries_between(self._state.month_ends, start, end)
+
+    def closed_periods(
+        self, start: date, end: date, *, include_weekends: bool = False
+    ) -> tuple[ClosedPeriod, ...]:
+        """返回与查询范围相交的完整休市区间。
+
+        默认排除只包含周六、周日的普通周末。设为 ``include_weekends=True``
+        后返回全部休市间隔。返回完整区间而不是裁剪后的片段，以保留准确的
+        前后交易日信息。
+        """
+
+        normalized_start, normalized_end = _validate_range(start, end)
+        self._require_coverage(normalized_start, normalized_end)
+        normalized_include_weekends = _validate_bool(
+            include_weekends, field="include_weekends"
+        )
+        state = self._state
+        if normalized_include_weekends:
+            periods = state.closed_periods
+            starts = state.closed_starts
+            ends = state.closed_ends
+        else:
+            periods = state.holiday_periods
+            starts = state.holiday_starts
+            ends = state.holiday_ends
+        left = bisect_left(ends, normalized_start)
+        right = bisect_right(starts, normalized_end)
+        return periods[left:right]
 
     def _boundaries_between(
         self, boundaries: tuple[date, ...], start: date, end: date

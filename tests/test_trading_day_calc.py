@@ -66,6 +66,49 @@ def test_month_boundaries_are_actual_calendar_boundaries(
     )
 
 
+def test_closed_periods_distinguish_weekends_and_exchange_holidays(
+    calendar: TradingCalendar,
+) -> None:
+    assert calendar.closed_periods(date(2021, 7, 1), date(2021, 7, 31)) == ()
+
+    july_periods = calendar.closed_periods(
+        date(2021, 7, 1), date(2021, 7, 31), include_weekends=True
+    )
+    assert len(july_periods) == 5
+    assert all(period.kind == "weekend" for period in july_periods)
+    assert july_periods[0].start == date(2021, 7, 3)
+    assert july_periods[0].end == date(2021, 7, 4)
+    assert july_periods[0].previous_trading_day == date(2021, 7, 2)
+    assert july_periods[0].next_trading_day == date(2021, 7, 5)
+
+    national_day = calendar.closed_periods(date(2021, 10, 1), date(2021, 10, 7))
+    assert len(national_day) == 1
+    assert national_day[0].start == date(2021, 10, 1)
+    assert national_day[0].end == date(2021, 10, 7)
+    assert national_day[0].kind == "mixed"
+
+    qingming = calendar.closed_periods(date(2023, 4, 5), date(2023, 4, 5))
+    assert len(qingming) == 1
+    assert qingming[0].kind == "exchange_holiday"
+
+
+def test_closed_period_query_returns_the_complete_intersecting_period(
+    calendar: TradingCalendar,
+) -> None:
+    period = calendar.closed_periods(date(2021, 10, 4), date(2021, 10, 4))[0]
+    assert period.start == date(2021, 10, 1)
+    assert period.end == date(2021, 10, 7)
+
+
+def test_closed_period_rejects_non_boolean_option(calendar: TradingCalendar) -> None:
+    with pytest.raises(TypeError):
+        calendar.closed_periods(
+            date(2021, 7, 1),
+            date(2021, 7, 31),
+            include_weekends=1,  # type: ignore[arg-type]
+        )
+
+
 @pytest.mark.parametrize("steps", [0, -1, True, 1.5])
 def test_invalid_steps_are_rejected(calendar: TradingCalendar, steps: object) -> None:
     with pytest.raises(ValueError):

@@ -1,6 +1,6 @@
 """中国 A 股交易日历。"""
 
-from .calendar import CalendarMetadata, TradingCalendar
+from .calendar import CalendarMetadata, ClosedPeriod, ClosedPeriodKind, TradingCalendar
 from .errors import (
     CalendarCoverageError,
     CalendarDataError,
@@ -15,6 +15,8 @@ __all__ = [
     "CalendarDataError",
     "CalendarMetadata",
     "CalendarUpdateError",
+    "ClosedPeriod",
+    "ClosedPeriodKind",
     "TradingCalendar",
     "TradingCalendarError",
     "__version__",
