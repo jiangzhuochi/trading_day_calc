@@ -91,16 +91,22 @@ def test_annual_notices_parse_to_the_same_schedule() -> None:
     assert sse.closed_weekdays[-1].isoformat() == "2026-10-07"
 
 
-def test_notice_discovery_requires_one_official_match() -> None:
+def test_notice_discovery_selects_one_annual_notice() -> None:
     listing = f'<a href="{SSE_URL}">2026 年部分节假日休市安排</a>'
-    assert discover_notice_url("SSE", listing, 2026) == SSE_URL
+    single_holiday_url = (
+        "https://www.sse.com.cn/disclosure/announcement/general/holiday.shtml"
+    )
+    listing_with_single_holiday = (
+        f'<a href="{single_holiday_url}">关于2026年端午节休市安排的公告</a>' + listing
+    )
+    assert discover_notice_url("SSE", listing_with_single_holiday, 2026) == SSE_URL
 
     with pytest.raises(CalendarCoverageError):
         discover_notice_url("SSE", "<html>没有公告</html>", 2026)
     with pytest.raises(CalendarDataError):
         discover_notice_url(
             "SSE",
-            listing + '<a href="/duplicate">2026年休市安排</a>',
+            listing + '<a href="/duplicate">2026年部分节假日休市安排</a>',
             2026,
         )
 
@@ -138,3 +144,49 @@ def test_fetch_schedule_uses_discovered_notice() -> None:
 
     assert calls == [listing_url, SSE_URL]
     assert len(schedule.closed_weekdays) == 19
+
+
+def test_fetch_schedule_traverses_szse_static_pages() -> None:
+    listing_url = "https://www.szse.cn/disclosure/notice/general/index.html"
+    annual_url = "https://www.szse.cn/disclosure/notice/general/annual.html"
+    listing = '<script>createPageHTML(5, 0, "index", "html");</script>'
+    annual_listing = f"""
+        <script>
+        var curHref = '{annual_url}';
+        //var curTitle = '被注释的标题';
+        var curTitle = '关于20 26年部分节假日休市安排的通知';
+        </script>
+    """
+    calls: list[str] = []
+
+    def fake_fetcher(exchange: str, url: str, timeout: float) -> FetchResponse:
+        assert exchange == "SZSE"
+        assert timeout == 3.0
+        calls.append(url)
+        if url == annual_url:
+            return FetchResponse(url=SZSE_URL, text=_fixture("szse_2026.html"))
+        if url.endswith("index_3.html"):
+            return FetchResponse(url=url, text=annual_listing)
+        return FetchResponse(url=url, text=listing if url == listing_url else "")
+
+    schedule = fetch_annual_schedule("SZSE", 2026, fetcher=fake_fetcher, timeout=3.0)
+
+    assert calls == [
+        listing_url,
+        "https://www.szse.cn/disclosure/notice/general/index_1.html",
+        "https://www.szse.cn/disclosure/notice/general/index_2.html",
+        "https://www.szse.cn/disclosure/notice/general/index_3.html",
+        annual_url,
+    ]
+    assert len(schedule.closed_weekdays) == 19
+
+
+def test_listing_pagination_rejects_abnormal_page_count() -> None:
+    listing = '<script>createPageHTML(51, 0, "index", "html");</script>'
+
+    def fake_fetcher(exchange: str, url: str, timeout: float) -> FetchResponse:
+        del exchange, timeout
+        return FetchResponse(url=url, text=listing)
+
+    with pytest.raises(CalendarDataError, match="页数异常"):
+        fetch_annual_schedule("SZSE", 2026, fetcher=fake_fetcher)

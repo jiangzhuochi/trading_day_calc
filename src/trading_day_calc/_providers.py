@@ -24,6 +24,7 @@ ALLOWED_HOSTS: dict[Exchange, str] = {
     "SZSE": "www.szse.cn",
 }
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_LISTING_PAGES = 50
 
 # 交易所官网可直接公开访问。显式使用空代理处理器，避免继承环境变量或
 # Windows 系统代理；某些代理会在 TLS 握手阶段提前断开连接。
@@ -39,6 +40,15 @@ _CLOSED_RANGE_PATTERN = re.compile(
 _DATE_PATTERN = re.compile(
     r"(?:(?P<year>\d{4})\s*年\s*)?"
     r"(?P<month>\d{1,2})\s*月\s*(?P<day>\d{1,2})\s*日"
+)
+_SZSE_SCRIPT_ARTICLE_PATTERN = re.compile(
+    r"^[ \t]*var\s+curHref\s*=\s*(['\"])(?P<href>.*?)\1\s*;"
+    r".*?^[ \t]*var\s+curTitle\s*=\s*(['\"])(?P<title>.*?)\3\s*;",
+    re.MULTILINE | re.DOTALL,
+)
+_STATIC_PAGINATION_PATTERN = re.compile(
+    r"createPageHTML\(\s*(?P<count>\d+)\s*,\s*0\s*,\s*"
+    r"['\"]index['\"]\s*,\s*['\"]html['\"]\s*\)"
 )
 
 
@@ -165,11 +175,17 @@ def discover_notice_url(exchange: Exchange, listing_html: str, year: int) -> str
 
     parser = _AnchorExtractor()
     parser.feed(listing_html)
+    links = list(parser.anchors)
+    if exchange == "SZSE":
+        links.extend(
+            (match.group("href"), match.group("title"))
+            for match in _SZSE_SCRIPT_ARTICLE_PATTERN.finditer(listing_html)
+        )
     expected = f"{year}年"
     candidates: list[str] = []
-    for href, anchor_text in parser.anchors:
+    for href, anchor_text in links:
         normalized = re.sub(r"\s+", "", unicodedata.normalize("NFKC", anchor_text))
-        if expected in normalized and "休市安排" in normalized:
+        if expected in normalized and "部分节假日休市安排" in normalized:
             url = urljoin(LISTING_URLS[exchange], href)
             _validate_official_url(exchange, url)
             candidates.append(url)
@@ -180,6 +196,26 @@ def discover_notice_url(exchange: Exchange, listing_html: str, year: int) -> str
             f"{exchange} 公告列表应唯一匹配 {year} 年休市通知，实际为 {len(candidates)} 条"
         )
     return candidates[0]
+
+
+def _paginated_listing_urls(exchange: Exchange, listing_html: str) -> tuple[str, ...]:
+    page_counts = {
+        int(match.group("count"))
+        for match in _STATIC_PAGINATION_PATTERN.finditer(listing_html)
+    }
+    if not page_counts:
+        return ()
+    if len(page_counts) != 1:
+        raise CalendarDataError(f"{exchange} 公告列表包含冲突的分页信息")
+    page_count = page_counts.pop()
+    if not 1 <= page_count <= MAX_LISTING_PAGES:
+        raise CalendarDataError(
+            f"{exchange} 公告列表页数异常: {page_count}，上限为 {MAX_LISTING_PAGES}"
+        )
+    base_url = LISTING_URLS[exchange]
+    return tuple(
+        urljoin(base_url, f"index_{index}.html") for index in range(1, page_count)
+    )
 
 
 def _parse_date_token(token: str, *, default_year: int) -> date:
@@ -252,6 +288,17 @@ def fetch_annual_schedule(
 
     listing_url = LISTING_URLS[exchange]
     listing = fetcher(exchange, listing_url, timeout)
-    notice_url = discover_notice_url(exchange, listing.text, year)
+    try:
+        notice_url = discover_notice_url(exchange, listing.text, year)
+    except CalendarCoverageError as initial_error:
+        for page_url in _paginated_listing_urls(exchange, listing.text):
+            page = fetcher(exchange, page_url, timeout)
+            try:
+                notice_url = discover_notice_url(exchange, page.text, year)
+            except CalendarCoverageError:
+                continue
+            break
+        else:
+            raise initial_error
     notice = fetcher(exchange, notice_url, timeout)
     return parse_annual_notice(exchange, year, notice.url, notice.text)
