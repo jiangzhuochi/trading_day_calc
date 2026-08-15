@@ -11,7 +11,7 @@ from typing import Literal, Protocol
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
-from .errors import CalendarDataError, CalendarUpdateError
+from .errors import CalendarCoverageError, CalendarDataError, CalendarUpdateError
 
 Exchange = Literal["SSE", "SZSE"]
 
@@ -169,6 +169,8 @@ def discover_notice_url(exchange: Exchange, listing_html: str, year: int) -> str
             url = urljoin(LISTING_URLS[exchange], href)
             _validate_official_url(exchange, url)
             candidates.append(url)
+    if not candidates:
+        raise CalendarCoverageError(f"{exchange} 尚未公布 {year} 年休市通知")
     if len(candidates) != 1:
         raise CalendarDataError(
             f"{exchange} 公告列表应唯一匹配 {year} 年休市通知，实际为 {len(candidates)} 条"

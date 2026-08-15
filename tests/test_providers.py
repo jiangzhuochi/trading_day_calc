@@ -8,7 +8,7 @@ from trading_day_calc._providers import (
     fetch_annual_schedule,
     parse_annual_notice,
 )
-from trading_day_calc.errors import CalendarDataError
+from trading_day_calc.errors import CalendarCoverageError, CalendarDataError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SSE_URL = (
@@ -35,7 +35,7 @@ def test_notice_discovery_requires_one_official_match() -> None:
     listing = f'<a href="{SSE_URL}">2026 年部分节假日休市安排</a>'
     assert discover_notice_url("SSE", listing, 2026) == SSE_URL
 
-    with pytest.raises(CalendarDataError):
+    with pytest.raises(CalendarCoverageError):
         discover_notice_url("SSE", "<html>没有公告</html>", 2026)
     with pytest.raises(CalendarDataError):
         discover_notice_url(

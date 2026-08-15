@@ -37,6 +37,25 @@ class CalendarData:
     sources: tuple[SourceRecord, ...]
 
 
+def calendar_data_to_json(data: CalendarData) -> str:
+    """将已校验的日历数据序列化为稳定 UTF-8 JSON。"""
+
+    payload: dict[str, object] = {
+        "schema_version": SCHEMA_VERSION,
+        "market": MARKET,
+        "coverage_start": data.coverage_start.isoformat(),
+        "coverage_end": data.coverage_end.isoformat(),
+        "generated_at": data.generated_at.isoformat(),
+        "session_count": len(data.sessions),
+        "sources": [
+            {"year": source.year, "sse": source.sse, "szse": source.szse}
+            for source in data.sources
+        ],
+        "sessions": [session.isoformat() for session in data.sessions],
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
 def _fail(origin: str, message: str) -> CalendarDataError:
     return CalendarDataError(f"{origin}: {message}")
 

@@ -5,9 +5,14 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
+from threading import RLock
 from typing import Literal
 
-from ._data import CalendarData, load_bundled_data
+from ._cache import default_cache_path, load_best_available, write_cache_atomically
+from ._data import CalendarData
+from ._providers import Fetcher, fetch_official_page
+from ._updater import fetch_verified_year, merge_year
 from .errors import CalendarCoverageError
 
 ClosedPeriodKind = Literal["weekend", "exchange_holiday", "mixed"]
@@ -22,6 +27,8 @@ class CalendarMetadata:
     generated_at: date
     session_count: int
     source_urls: tuple[str, ...]
+    cache_path: Path
+    auto_refresh: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +74,22 @@ def _validate_range(start: date, end: date) -> tuple[date, date]:
 def _validate_bool(value: object, *, field: str) -> bool:
     if not isinstance(value, bool):
         raise TypeError(f"{field} 必须是 bool")
+    return value
+
+
+def _validate_timeout(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError("timeout 必须是大于 0 的秒数")
+    return float(value)
+
+
+def _validate_year(value: object) -> int:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not 1990 <= value <= 9999
+    ):
+        raise ValueError("through_year 必须是 1990 至 9999 的整数")
     return value
 
 
@@ -152,8 +175,22 @@ class TradingCalendar:
     不可变元组，调用方不能意外修改日历内部状态。
     """
 
-    def __init__(self) -> None:
-        self._state = _build_state(load_bundled_data())
+    def __init__(
+        self,
+        cache_path: str | Path | None = None,
+        *,
+        auto_refresh: bool = True,
+        timeout: float = 10.0,
+        _fetcher: Fetcher = fetch_official_page,
+    ) -> None:
+        self._cache_path = (
+            Path(cache_path) if cache_path is not None else default_cache_path()
+        )
+        self._auto_refresh = _validate_bool(auto_refresh, field="auto_refresh")
+        self._timeout = _validate_timeout(timeout)
+        self._fetcher = _fetcher
+        self._refresh_lock = RLock()
+        self._state = _build_state(load_best_available(self._cache_path))
 
     @property
     def sessions(self) -> tuple[date, ...]:
@@ -187,10 +224,21 @@ class TradingCalendar:
             generated_at=data.generated_at,
             session_count=len(data.sessions),
             source_urls=source_urls,
+            cache_path=self._cache_path,
+            auto_refresh=self._auto_refresh,
         )
 
-    def _require_coverage(self, start: date, end: date) -> None:
-        if start < self.coverage_start or end > self.coverage_end:
+    def _ensure_coverage(self, start: date, end: date) -> None:
+        if start < self.coverage_start:
+            raise CalendarCoverageError(
+                f"请求范围 {start} 至 {end} 超出当前覆盖范围 "
+                f"{self.coverage_start} 至 {self.coverage_end}"
+            )
+        if end <= self.coverage_end:
+            return
+        if self._auto_refresh:
+            self.refresh(through_year=end.year)
+        if end > self.coverage_end:
             raise CalendarCoverageError(
                 f"请求范围 {start} 至 {end} 超出当前覆盖范围 "
                 f"{self.coverage_start} 至 {self.coverage_end}"
@@ -200,14 +248,14 @@ class TradingCalendar:
         """判断指定日期是否为交易日。"""
 
         normalized = _validate_date(day, field="day")
-        self._require_coverage(normalized, normalized)
+        self._ensure_coverage(normalized, normalized)
         return normalized in self._state.session_set
 
     def trading_days(self, start: date, end: date) -> tuple[date, ...]:
         """返回闭区间内的全部交易日。"""
 
         normalized_start, normalized_end = _validate_range(start, end)
-        self._require_coverage(normalized_start, normalized_end)
+        self._ensure_coverage(normalized_start, normalized_end)
         sessions = self._state.sessions
         left = bisect_left(sessions, normalized_start)
         right = bisect_right(sessions, normalized_end)
@@ -218,7 +266,7 @@ class TradingCalendar:
 
         normalized = _validate_date(day, field="day")
         normalized_steps = self._validate_steps(steps)
-        self._require_coverage(normalized, normalized)
+        self._ensure_coverage(normalized, normalized)
         index = bisect_right(self._state.sessions, normalized) + normalized_steps - 1
         if index >= len(self._state.sessions):
             raise CalendarCoverageError("当前覆盖范围内不存在所请求的后续交易日")
@@ -229,7 +277,7 @@ class TradingCalendar:
 
         normalized = _validate_date(day, field="day")
         normalized_steps = self._validate_steps(steps)
-        self._require_coverage(normalized, normalized)
+        self._ensure_coverage(normalized, normalized)
         index = bisect_left(self._state.sessions, normalized) - normalized_steps
         if index < 0:
             raise CalendarCoverageError("当前覆盖范围内不存在所请求的前序交易日")
@@ -256,7 +304,7 @@ class TradingCalendar:
         """
 
         normalized_start, normalized_end = _validate_range(start, end)
-        self._require_coverage(normalized_start, normalized_end)
+        self._ensure_coverage(normalized_start, normalized_end)
         normalized_include_weekends = _validate_bool(
             include_weekends, field="include_weekends"
         )
@@ -277,7 +325,7 @@ class TradingCalendar:
         self, boundaries: tuple[date, ...], start: date, end: date
     ) -> tuple[date, ...]:
         normalized_start, normalized_end = _validate_range(start, end)
-        self._require_coverage(normalized_start, normalized_end)
+        self._ensure_coverage(normalized_start, normalized_end)
         left = bisect_left(boundaries, normalized_start)
         right = bisect_right(boundaries, normalized_end)
         return boundaries[left:right]
@@ -287,3 +335,49 @@ class TradingCalendar:
         if not isinstance(steps, int) or isinstance(steps, bool) or steps < 1:
             raise ValueError("steps 必须是大于等于 1 的整数")
         return steps
+
+    def refresh(
+        self, through_year: int | None = None, *, force: bool = False
+    ) -> CalendarMetadata:
+        """联网刷新日历，并在全部年度成功后原子写入缓存。
+
+        ``through_year`` 默认为当前公历年份。普通刷新只扩展覆盖范围；设置
+        ``force=True`` 时可重新核验并替换一个已覆盖年度。
+        """
+
+        normalized_force = _validate_bool(force, field="force")
+        target_year = _validate_year(
+            date.today().year if through_year is None else through_year
+        )
+
+        with self._refresh_lock:
+            current_data = self._state.data
+            earliest_refresh_year = min(source.year for source in current_data.sources)
+            if target_year < earliest_refresh_year:
+                raise CalendarCoverageError(
+                    f"官方联网刷新仅支持 {earliest_refresh_year} 年及以后"
+                )
+            current_year = current_data.coverage_end.year
+            if normalized_force:
+                years = (target_year,)
+            elif target_year > current_year:
+                years = tuple(range(current_year + 1, target_year + 1))
+            else:
+                return self.metadata
+
+            updated = current_data
+            generated_at = date.today()
+            for year in years:
+                sessions, source = fetch_verified_year(
+                    year, fetcher=self._fetcher, timeout=self._timeout
+                )
+                updated = merge_year(
+                    updated,
+                    year,
+                    sessions,
+                    source,
+                    generated_at=generated_at,
+                )
+            write_cache_atomically(self._cache_path, updated)
+            self._state = _build_state(updated)
+            return self.metadata
