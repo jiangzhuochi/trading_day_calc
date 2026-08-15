@@ -1,35 +1,44 @@
-import datetime
-from typing import Callable
+from collections.abc import Callable
+from datetime import date
+from typing import Protocol, TypeVar
 
 import pytest
 
-import trading_day_calc
-from trading_day_calc import *
+from trading_day_calc import TradingCalendar
 
-# Type aliases
-DateType = dt = datetime.date
-FilterFunc = Callable[[DateType], bool]
-
-td = trading_day_calc.TRADE_DATE
+ResultT = TypeVar("ResultT")
 
 
-@pytest.mark.benchmark(group="us-group")
-def test_bench_filter_mon(benchmark):
-    ret = benchmark.pedantic(filter_mon, args=(td,), rounds=100, iterations=10)
-    for d in ret:
-        assert d.weekday() == 0
+class BenchmarkFixture(Protocol):
+    def __call__(
+        self, function: Callable[..., ResultT], *args: object, **kwargs: object
+    ) -> ResultT: ...
 
 
-@pytest.mark.benchmark(group="us-group")
-def test_bench_filter_between(benchmark):
-    assert td == benchmark.pedantic(filter_between, rounds=100, iterations=10)
+@pytest.fixture(scope="module")
+def calendar() -> TradingCalendar:
+    return TradingCalendar()
 
 
-@pytest.mark.benchmark(group="ms-group")
-def test_bench_get_first_day_per_month(benchmark):
-    assert benchmark.pedantic(get_first_day_per_month, rounds=30, iterations=10)
+@pytest.mark.benchmark(group="core-query")
+def test_bench_trading_days(
+    benchmark: BenchmarkFixture, calendar: TradingCalendar
+) -> None:
+    result = benchmark(
+        calendar.trading_days,
+        date(1990, 12, 19),
+        date(2026, 12, 31),
+    )
+    assert len(result) == 8_797
 
 
-@pytest.mark.benchmark(group="ms-group")
-def test_bench_get_1d_before_holiday(benchmark):
-    assert benchmark.pedantic(get_1d_before_holiday, rounds=30, iterations=10)
+@pytest.mark.benchmark(group="core-query")
+def test_bench_month_starts(
+    benchmark: BenchmarkFixture, calendar: TradingCalendar
+) -> None:
+    result = benchmark(
+        calendar.month_starts,
+        date(1990, 12, 19),
+        date(2026, 12, 31),
+    )
+    assert len(result) == 433

@@ -6,7 +6,9 @@ import json
 from dataclasses import dataclass
 from datetime import date
 from importlib import resources
+from itertools import pairwise
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlsplit
 
 from .errors import CalendarDataError
@@ -40,15 +42,18 @@ def _fail(origin: str, message: str) -> CalendarDataError:
 
 
 def _as_mapping(value: object, *, origin: str, field: str) -> dict[str, object]:
-    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+    if not isinstance(value, dict):
         raise _fail(origin, f"{field} 必须是字符串键对象")
-    return value
+    raw_mapping = cast(dict[object, object], value)
+    if not all(isinstance(key, str) for key in raw_mapping):
+        raise _fail(origin, f"{field} 必须是字符串键对象")
+    return {cast(str, key): item for key, item in raw_mapping.items()}
 
 
 def _as_list(value: object, *, origin: str, field: str) -> list[object]:
     if not isinstance(value, list):
         raise _fail(origin, f"{field} 必须是数组")
-    return value
+    return cast(list[object], value)
 
 
 def _as_string(value: object, *, origin: str, field: str) -> str:
@@ -135,7 +140,7 @@ def parse_calendar_data(text: str, *, origin: str = "日历数据") -> CalendarD
     )
     if not sessions:
         raise _fail(origin, "sessions 不能为空")
-    if any(current >= following for current, following in zip(sessions, sessions[1:])):
+    if any(current >= following for current, following in pairwise(sessions)):
         raise _fail(origin, "sessions 必须严格递增且不重复")
     if any(item.weekday() >= 5 for item in sessions):
         raise _fail(origin, "sessions 不能包含周六或周日")

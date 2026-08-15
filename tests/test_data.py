@@ -3,6 +3,7 @@ import json
 from collections.abc import Callable
 from datetime import date
 from importlib import resources
+from typing import cast
 
 import pytest
 
@@ -23,7 +24,46 @@ def _bundled_payload() -> dict[str, object]:
     )
     value = json.loads(text)
     assert isinstance(value, dict)
-    return value
+    return cast(dict[str, object], value)
+
+
+def _invalid_schema(payload: dict[str, object]) -> None:
+    payload["schema_version"] = 999
+
+
+def _invalid_market(payload: dict[str, object]) -> None:
+    payload["market"] = "UNKNOWN"
+
+
+def _invalid_count(payload: dict[str, object]) -> None:
+    payload["session_count"] = 1
+
+
+def _invalid_coverage(payload: dict[str, object]) -> None:
+    payload["coverage_start"] = "2026-01-01"
+
+
+def _duplicate_sessions(payload: dict[str, object]) -> None:
+    payload["sessions"] = ["2021-01-04", "2021-01-04"]
+
+
+def _weekend_session(payload: dict[str, object]) -> None:
+    payload["sessions"] = ["2021-01-09"]
+
+
+def _missing_sources(payload: dict[str, object]) -> None:
+    payload["sources"] = []
+
+
+INVALID_MUTATIONS: tuple[Callable[[dict[str, object]], None], ...] = (
+    _invalid_schema,
+    _invalid_market,
+    _invalid_count,
+    _invalid_coverage,
+    _duplicate_sessions,
+    _weekend_session,
+    _missing_sources,
+)
 
 
 def test_bundled_data_preserves_legacy_sessions_and_extends_to_2026() -> None:
@@ -51,15 +91,7 @@ def test_bundled_data_preserves_legacy_sessions_and_extends_to_2026() -> None:
 
 @pytest.mark.parametrize(
     "mutate",
-    [
-        lambda payload: payload.update(schema_version=999),
-        lambda payload: payload.update(market="UNKNOWN"),
-        lambda payload: payload.update(session_count=1),
-        lambda payload: payload.update(coverage_start="2026-01-01"),
-        lambda payload: payload.update(sessions=["2021-01-04", "2021-01-04"]),
-        lambda payload: payload.update(sessions=["2021-01-09"]),
-        lambda payload: payload.update(sources=[]),
-    ],
+    INVALID_MUTATIONS,
 )
 def test_invalid_calendar_data_is_rejected(
     mutate: Callable[[dict[str, object]], None],

@@ -44,16 +44,12 @@ target-version = "py310"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I"]
-
-[tool.ruff.lint.per-file-ignores]
-"src/trading_day_calc/__init__.py" = ["F403"]
-"tests/*.py" = ["F403", "F405"]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
 
 [tool.pyright]
 include = ["src", "tests", "script"]
 pythonVersion = "3.10"
-typeCheckingMode = "basic"
+typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
 
