@@ -142,4 +142,10 @@ python -m venv .venv
 .venv\Scripts\python -m build --no-isolation
 ```
 
-项目要求分支覆盖率不低于 95%。联网测试带有 `network` 标记，默认测试套件使用固定的官方公告样本，不依赖交易所网站的实时可用性。
+项目要求分支覆盖率不低于 95%。默认测试套件中的联网测试会跳过，其他测试使用固定的官方公告样本，不依赖交易所网站的实时可用性。需要验证真实的沪深公告发现、下载、双源核验和缓存写入时，执行：
+
+```powershell
+$env:TRADING_DAY_CALC_NETWORK_TEST = "1"
+.venv\Scripts\python -m pytest -m network tests\test_live_refresh.py
+Remove-Item Env:TRADING_DAY_CALC_NETWORK_TEST
+```

@@ -64,9 +64,10 @@
 
 1. 执行 `python -m trading_day_calc refresh --through-year YYYY --force --json`；
 2. 检查输出中的覆盖范围、交易日数量和两条官方来源 URL；
-3. 运行 Ruff 格式化、Pyright、完整测试和性能基准；
-4. 将验证后的缓存内容同步到包内 `calendar.json`；
-5. 构建 wheel，并确认其中包含 `calendar.json` 和 `py.typed`；
-6. 在干净环境安装 wheel，验证导入、查询和 `status --json`。
+3. 设置 `TRADING_DAY_CALC_NETWORK_TEST=1`，运行带 `network` 标记的真实网站端到端测试；
+4. 运行 Ruff 格式化、Pyright、完整测试和性能基准；
+5. 将验证后的缓存内容同步到包内 `calendar.json`；
+6. 构建 wheel，并确认其中包含 `calendar.json` 和 `py.typed`；
+7. 在干净环境安装 wheel，验证导入、查询和 `status --json`。
 
 若交易所网站出现 TLS、限流、验证码、页面结构变化或来源不一致，应停止发布并保留上一份已确认快照；不得使用空列表或单一来源替代双源核验。
