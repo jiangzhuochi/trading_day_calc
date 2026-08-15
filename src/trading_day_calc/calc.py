@@ -5,18 +5,18 @@ from itertools import groupby
 from typing import Callable, List, Optional
 
 __all__ = [
-    'TRADE_DATE',
-    'filter_d',
-    'filter_mon',
-    'filter_tues',
-    'filter_wed',
-    'filter_thur',
-    'filter_fri',
-    'filter_between',
-    'get_first_day_per_month',
-    'get_last_day_per_month',
-    'get_1d_after_holiday',
-    'get_1d_before_holiday',
+    "TRADE_DATE",
+    "filter_d",
+    "filter_mon",
+    "filter_tues",
+    "filter_wed",
+    "filter_thur",
+    "filter_fri",
+    "filter_between",
+    "get_first_day_per_month",
+    "get_last_day_per_month",
+    "get_1d_after_holiday",
+    "get_1d_before_holiday",
 ]
 
 # Type aliases
@@ -25,14 +25,17 @@ FilterFunc = Callable[[DateType], bool]
 
 
 def _get_trade_date() -> List[DateType]:
-    data_bytes = pkgutil.get_data(__package__, 'trade_date.txt')
+    if __package__ is None:
+        raise RuntimeError("trading_day_calc must be imported as a package")
+
+    data_bytes = pkgutil.get_data(__package__, "trade_date.txt")
     if data_bytes is not None:
         trade_date_str = data_bytes.decode()
     else:
         raise Exception("Not found trade_date.txt")
     scope = {}
     exec(trade_date_str, scope)
-    return scope['TRADE_DATE']
+    return scope["TRADE_DATE"]
 
 
 TRADE_DATE: List[DateType] = _get_trade_date()
@@ -62,9 +65,12 @@ def filter_fri(ds: Iterable[DateType]) -> List[DateType]:
     return filter_d(lambda d: d.weekday() == 4, ds)
 
 
-def filter_between(ds: Optional[List[DateType]] = None, *,
-                   start: Optional[DateType] = None,
-                   end: Optional[DateType] = None) -> List[DateType]:
+def filter_between(
+    ds: Optional[List[DateType]] = None,
+    *,
+    start: Optional[DateType] = None,
+    end: Optional[DateType] = None,
+) -> List[DateType]:
 
     ds = TRADE_DATE if ds is None else ds
     # 若传入一个空列表，则返回一个空列表
@@ -76,38 +82,50 @@ def filter_between(ds: Optional[List[DateType]] = None, *,
     return filter_d(lambda d: s <= d <= e, ds)
 
 
-def _get_nth_day_per_month(*, ds: Optional[List[DateType]],
-                           start: Optional[DateType],
-                           end: Optional[DateType],
-                           nth: int = 0) -> List[DateType]:
+def _get_nth_day_per_month(
+    *,
+    ds: Optional[List[DateType]],
+    start: Optional[DateType],
+    end: Optional[DateType],
+    nth: int = 0,
+) -> List[DateType]:
 
     ungrouped = filter_between(ds=ds, start=start, end=end)
     if len(ungrouped) == 0:
         return []
 
     groups = []
-    for _, g in groupby(ungrouped, key=lambda d: d.strftime('%Y%m')):
+    for _, g in groupby(ungrouped, key=lambda d: d.strftime("%Y%m")):
         groups.append(list(g)[nth])
 
     return groups
 
 
-def get_first_day_per_month(ds: Optional[List[DateType]] = None, *,
-                            start: Optional[DateType] = None,
-                            end: Optional[DateType] = None) -> List[DateType]:
+def get_first_day_per_month(
+    ds: Optional[List[DateType]] = None,
+    *,
+    start: Optional[DateType] = None,
+    end: Optional[DateType] = None,
+) -> List[DateType]:
     return _get_nth_day_per_month(ds=ds, start=start, end=end, nth=0)
 
 
-def get_last_day_per_month(ds: Optional[List[DateType]] = None, *,
-                           start: Optional[DateType] = None,
-                           end: Optional[DateType] = None) -> List[DateType]:
+def get_last_day_per_month(
+    ds: Optional[List[DateType]] = None,
+    *,
+    start: Optional[DateType] = None,
+    end: Optional[DateType] = None,
+) -> List[DateType]:
     return _get_nth_day_per_month(ds=ds, start=start, end=end, nth=-1)
 
 
-def _get_nd_before_or_after_holiday(*, ds: Optional[List[DateType]],
-                                    start: Optional[DateType],
-                                    end: Optional[DateType],
-                                    nth: int = 0) -> List[DateType]:
+def _get_nd_before_or_after_holiday(
+    *,
+    ds: Optional[List[DateType]],
+    start: Optional[DateType],
+    end: Optional[DateType],
+    nth: int = 0,
+) -> List[DateType]:
 
     ungrouped = filter_between(ds=ds, start=start, end=end)
     if len(ungrouped) == 0:
@@ -119,13 +137,13 @@ def _get_nd_before_or_after_holiday(*, ds: Optional[List[DateType]],
     # 时间列表的开始日的前一交易日，结束日的后一交易日也加进去
     i = TRADE_DATE.index(s)
     if i > 0:
-        before_s = [TRADE_DATE[i-1]]
+        before_s = [TRADE_DATE[i - 1]]
     else:
         before_s = []
 
     i = TRADE_DATE.index(e)
     if i < len(TRADE_DATE) - 1:
-        after_e = [TRADE_DATE[i+1]]
+        after_e = [TRADE_DATE[i + 1]]
     else:
         after_e = []
 
@@ -142,11 +160,9 @@ def _get_nd_before_or_after_holiday(*, ds: Optional[List[DateType]],
         ungrouped_before_s = ungrouped[:-1]
         ungrouped_after_e = ungrouped[1:]
 
-    diff = list(map(
-        lambda d1, d2: (d2-d1).days,
-        ungrouped_before_s,
-        ungrouped_after_e
-    ))
+    diff = list(
+        map(lambda d1, d2: (d2 - d1).days, ungrouped_before_s, ungrouped_after_e)
+    )
     # 这个列表存放的数字，对应于 ungrouped_after_e 列表下标，是假期后的第一个交易日
     subscripts = [i for i, j in enumerate(diff) if j > 1]
 
@@ -156,10 +172,10 @@ def _get_nd_before_or_after_holiday(*, ds: Optional[List[DateType]],
         if i == 0:
             slices.append(slice(0, subscripts[0]))
         if i < len(subscripts) - 1:
-            slices.append(slice(subscripts[i], subscripts[i+1]))
+            slices.append(slice(subscripts[i], subscripts[i + 1]))
         else:
             # 原本的 ungrouped 不含 after_e，因此这里的切片也不包含它
-            slices.append(slice(subscripts[i], len(ungrouped_after_e)-1))
+            slices.append(slice(subscripts[i], len(ungrouped_after_e) - 1))
 
     groups = []
     # nth 不小于 0 是假期后，nth=0 为假期后第一个交易日，nth=1 为假期后第二个交易日
@@ -182,13 +198,19 @@ def _get_nd_before_or_after_holiday(*, ds: Optional[List[DateType]],
     return groups
 
 
-def get_1d_after_holiday(ds: Optional[List[DateType]] = None, *,
-                         start: Optional[DateType] = None,
-                         end: Optional[DateType] = None) -> List[DateType]:
+def get_1d_after_holiday(
+    ds: Optional[List[DateType]] = None,
+    *,
+    start: Optional[DateType] = None,
+    end: Optional[DateType] = None,
+) -> List[DateType]:
     return _get_nd_before_or_after_holiday(ds=ds, start=start, end=end, nth=0)
 
 
-def get_1d_before_holiday(ds: Optional[List[DateType]] = None, *,
-                          start: Optional[DateType] = None,
-                          end: Optional[DateType] = None) -> List[DateType]:
+def get_1d_before_holiday(
+    ds: Optional[List[DateType]] = None,
+    *,
+    start: Optional[DateType] = None,
+    end: Optional[DateType] = None,
+) -> List[DateType]:
     return _get_nd_before_or_after_holiday(ds=ds, start=start, end=end, nth=-1)
