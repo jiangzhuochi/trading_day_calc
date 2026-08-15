@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from html.parser import HTMLParser
 from typing import Literal, Protocol
 from urllib.parse import urljoin, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import OpenerDirector, ProxyHandler, Request, build_opener
 
 from .errors import CalendarCoverageError, CalendarDataError, CalendarUpdateError
 
@@ -24,6 +24,10 @@ ALLOWED_HOSTS: dict[Exchange, str] = {
     "SZSE": "www.szse.cn",
 }
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+
+# 交易所官网可直接公开访问。显式使用空代理处理器，避免继承环境变量或
+# Windows 系统代理；某些代理会在 TLS 握手阶段提前断开连接。
+_DIRECT_OPENER: OpenerDirector = build_opener(ProxyHandler({}))
 
 _DATE_TOKEN = (
     r"(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*日"
@@ -130,7 +134,7 @@ def fetch_official_page(exchange: Exchange, url: str, timeout: float) -> FetchRe
         },
     )
     try:
-        with urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with _DIRECT_OPENER.open(request, timeout=timeout) as response:  # noqa: S310
             final_url = response.geturl()
             _validate_official_url(exchange, final_url)
             body = response.read(MAX_RESPONSE_BYTES + 1)

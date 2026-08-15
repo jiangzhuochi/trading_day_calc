@@ -52,6 +52,16 @@ class _FakeResponse:
         return self._body
 
 
+class _FakeOpener:
+    def __init__(self, response: _FakeResponse) -> None:
+        self._response = response
+
+    def open(self, request: object, timeout: float) -> _FakeResponse:
+        assert request is not None
+        assert timeout == 2.0
+        return self._response
+
+
 def _fixture(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
 
@@ -60,13 +70,11 @@ def test_official_fetcher_limits_and_decodes_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     body = "官方页面".encode()
-
-    def fake_urlopen(request: object, timeout: float) -> _FakeResponse:
-        assert request is not None
-        assert timeout == 2.0
-        return _FakeResponse(SSE_URL, body)
-
-    monkeypatch.setattr(providers, "urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        providers,
+        "_DIRECT_OPENER",
+        _FakeOpener(_FakeResponse(SSE_URL, body)),
+    )
 
     response = fetch_official_page("SSE", SSE_URL, 2.0)
 
